@@ -1,0 +1,44 @@
+[project]
+name = "ml-favorita-forecasting"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11.17"
+dependencies = [
+    "duckdb>=2.0.0",
+    "notebook>=7.6.3",
+    "pandas>=3.1.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+include = ["."]
+# Data and generated artifacts only; scripts and notebooks are not excluded.
+exclude = [
+    "**/.venv", "**/.git", "**/__pycache__", "**/.pytest_cache",
+    "**/.ruff_cache", "**/.ipynb_checkpoints", "build", "dist", "data",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["data"]
+# Do not silently skip exploratory code under the gitignored tmp directory.
+respect-gitignore = false
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B"]
+extend-select = ["UP", "SIM", "RUF100"]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+]
