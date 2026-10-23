@@ -1,0 +1,102 @@
+# type: ignore
+
+import math
+import pandas as pd
+import duckdb
+
+_INT_TYPES = {
+    "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT",
+    "UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT", "UHUGEINT",
+}
+_FLOAT_TYPES = {"FLOAT", "REAL", "DOUBLE"}
+_CAT_PREFIXES = ("VARCHAR", "ENUM", "BOOLEAN")
+
+
+def num_stats(con: duckdb.DuckDBPyConnection, source: str, col: str) -> dict:
+    col_q = '"' + col.replace('"', '""') + '"'
+
+    # Тип берём из схемы, а не из данных: работает и на пустой таблице
+    dtype = con.execute(f"DESCRIBE SELECT {col_q} FROM {source}").fetchone()[1]
+    is_int = dtype in _INT_TYPES
+    is_float = dtype in _FLOAT_TYPES
+    is_decimal = dtype.startswith("DECIMAL")
+    if not (is_int or is_float or is_decimal):
+        raise TypeError(f"Колонка {col!r} не числовая: {dtype}")
+
+    # У целых типов дробной части быть не может, лишняя проверка не нужна
+    frac_expr = "false" if is_int else "coalesce(bool_or(c <> floor(c)), false)"
+
+    total, not_null, distinct, mn, mx, has_fraction = con.execute(f"""
+        SELECT count(*), count(c), count(DISTINCT c), min(c), max(c), {frac_expr}
+        FROM (SELECT {col_q} AS c FROM {source})
+    """).fetchone()
+
+    gaps = continuous = None
+    finite = not_null > 0 and (
+        not is_float or (math.isfinite(mn) and math.isfinite(mx))
+    )
+    if finite and not has_fraction:
+        # Считаем в Python: int без переполнения, в отличие от BIGINT в SQL
+        span = int(mx) - int(mn) + 1
+        gaps = span - distinct
+        continuous = gaps == 0
+
+    return {
+        "column": col,
+        "dtype": dtype,
+        "total": total,
+        "not_null": not_null,
+        "nulls": total - not_null,
+        "duplicates": not_null - distinct,
+        "min": mn,
+        "max": mx,
+        "has_fraction": bool(has_fraction),
+        "continuous": continuous,
+        "missing_in_range": gaps,
+    }
+
+def show_num_stats(con: duckdb.DuckDBPyConnection, source: str, col: str) -> pd.DataFrame:
+    result = num_stats(con, source, col)
+    return pd.DataFrame(result, index=[col])
+
+
+
+
+def _quote_ident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _column_type(con: duckdb.DuckDBPyConnection, source: str, col_q: str) -> str:
+    # Тип берём из схемы, а не из данных: работает и на пустой таблице
+    return con.execute(f"DESCRIBE SELECT {col_q} FROM {source}").fetchone()[1]
+
+
+
+
+
+def cat_stats(con: duckdb.DuckDBPyConnection, source: str, col: str) -> dict:
+    col_q = _quote_ident(col)
+    dtype = _column_type(con, source, col_q)
+    if not dtype.startswith(_CAT_PREFIXES):
+        raise TypeError(f"Колонка {col!r} не категориальная: {dtype}")
+
+    total, not_null, distinct = con.execute(f"""
+        SELECT count(*), count(c), count(DISTINCT c)
+        FROM (SELECT {col_q} AS c FROM {source})
+    """).fetchone()
+
+    return {
+        "column": col,
+        "dtype": dtype,
+        "total": total,
+        "not_null": not_null,
+        "nulls": total - not_null,
+        "duplicates": not_null - distinct,
+        "cardinality": distinct,
+        # Доля от not_null: NULL не считается категорией
+        "cardinality_pct": 100 * distinct / not_null if not_null else None,
+    }
+
+
+def show_cat_stats(con: duckdb.DuckDBPyConnection, source: str, col: str) -> pd.DataFrame:
+    return pd.DataFrame(cat_stats(con, source, col), index=[col]).round({"cardinality_pct": 2})
