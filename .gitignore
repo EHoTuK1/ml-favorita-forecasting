@@ -13,3 +13,5 @@ wheels/
 # Custom
 data
 .obsidian
+_temp*
+.ruff_cache

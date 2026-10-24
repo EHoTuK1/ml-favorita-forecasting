@@ -6,8 +6,10 @@ readme = "README.md"
 requires-python = ">=3.11.17"
 dependencies = [
     "duckdb>=2.0.0",
+    "matplotlib>=3.11.2",
     "notebook>=7.6.3",
     "pandas>=3.1.0",
+    "pyarrow>=26.0.0",
 ]
 
 [tool.uv]
